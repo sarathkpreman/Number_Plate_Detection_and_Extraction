@@ -1,7 +1,6 @@
 import cv2
 import easyocr
 import csv
-import hydra
 import torch
 from pathlib import Path
 from ultralytics.yolo.engine.predictor import BasePredictor
@@ -68,36 +67,36 @@ class DetectionPredictor(BasePredictor):
         if len(det) == 0:
             return log_string
         
-        # Iterate over each detection and extract number plate details
-        for *xyxy, conf, cls in reversed(det):
-            c = int(cls)  # integer class
-            label = f'{self.model.names[c]} {conf:.2f}'
-            # Get ROI from the frame
-            roi = im0[int(xyxy[1]):int(xyxy[3]), int(xyxy[0]):int(xyxy[2])]
-            # Extract details from the number plate ROI
-            plate_details = getOCR(roi)
-            if plate_details:
-                # Save the details to CSV
-                csv_file_path = f"{self.save_dir}/{self.data_path.stem}_{c}_number_plate_details.csv"
-                with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:
-                    csv_writer = csv.writer(csvfile)
-                    csv_writer.writerow(['Number Plate Details'])
+        # Initialize CSV writer outside the loop
+        csv_file_path = f"{self.save_dir}/{self.data_path.stem}_number_plate_details.csv"
+        with open(csv_file_path, 'a', newline='', encoding='utf-8') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            # Iterate over each detection and extract number plate details
+            for *xyxy, conf, cls in reversed(det):
+                c = int(cls)  # integer class
+                label = f'{self.model.names[c]} {conf:.2f}'
+                # Get ROI from the frame
+                roi = im0[int(xyxy[1]):int(xyxy[3]), int(xyxy[0]):int(xyxy[2])]
+                # Extract details from the number plate ROI
+                plate_details = getOCR(roi)
+                if plate_details:
                     # Split multiline details and write each one on a separate row
                     details = plate_details.split('\n')
-                    csv_writer.writerow([" ".join(details)])  # Write details in single row with whitespace between lines
-                log_string += f"{label} OCR saved to {csv_file_path}, "
-            else:
-                log_string += f"No text detected from number plate {label}, "
-            
-            # Add bounding box to image
-            if self.args.save or self.args.save_crop or self.args.show:
-                self.annotator.box_label(xyxy, label, color=colors(c, True))
-            if self.args.save_crop:
-                imc = im0.copy()
-                save_one_box(xyxy,
-                             imc,
-                             file=Path(self.save_dir) / 'crops' / self.model.model.names[c] / f'{self.data_path.stem}_{c}.jpg',
-                             BGR=True)
+                    for detail in details:
+                        csv_writer.writerow([detail])
+                    log_string += f"{label} OCR saved to {csv_file_path}, "
+                else:
+                    log_string += f"No text detected from number plate {label}, "
+                
+                # Add bounding box to image
+                if self.args.save or self.args.save_crop or self.args.show:
+                    self.annotator.box_label(xyxy, label, color=colors(c, True))
+                if self.args.save_crop:
+                    imc = im0.copy()
+                    save_one_box(xyxy,
+                                imc,
+                                file=Path(self.save_dir) / 'crops' / self.model.model.names[c] / f'{self.data_path.stem}_{c}.jpg',
+                                BGR=True)
 
         return log_string
 
