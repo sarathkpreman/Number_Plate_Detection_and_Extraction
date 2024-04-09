@@ -2,6 +2,7 @@ import cv2
 import easyocr
 import csv
 import torch
+import hydra
 from pathlib import Path
 from ultralytics.yolo.engine.predictor import BasePredictor
 from ultralytics.yolo.utils import DEFAULT_CONFIG, ROOT, ops
