@@ -3,14 +3,19 @@ import easyocr
 import csv
 import torch
 import hydra
+from datetime import datetime  # Import datetime module for getting current date and time
 from pathlib import Path
 from ultralytics.yolo.engine.predictor import BasePredictor
 from ultralytics.yolo.utils import DEFAULT_CONFIG, ROOT, ops
 from ultralytics.yolo.utils.checks import check_imgsz
 from ultralytics.yolo.utils.plotting import Annotator, colors, save_one_box
+from Levenshtein import distance  # Import Levenshtein distance for string comparison
 
 # Initialize EasyOCR reader
 reader = easyocr.Reader(['en'])
+
+# Dictionary to store previously detected vehicle details across frames
+previous_frames = {}
 
 def getOCR(im):
     # Function to extract details from the number plate
@@ -72,6 +77,15 @@ class DetectionPredictor(BasePredictor):
         csv_file_path = f"{self.save_dir}/{self.data_path.stem}_number_plate_details.csv"
         with open(csv_file_path, 'a', newline='', encoding='utf-8') as csvfile:
             csv_writer = csv.writer(csvfile)
+            
+            # Add headers to CSV if it's empty
+            if csvfile.tell() == 0:
+                csv_writer.writerow(["Vehicles Detected in Campus", "Date", "Time"])
+            
+            # Get current date and time
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            current_time = datetime.now().strftime("%H:%M:%S")
+            
             # Iterate over each detection and extract number plate details
             for *xyxy, conf, cls in reversed(det):
                 c = int(cls)  # integer class
@@ -81,11 +95,23 @@ class DetectionPredictor(BasePredictor):
                 # Extract details from the number plate ROI
                 plate_details = getOCR(roi)
                 if plate_details:
-                    # Split multiline details and write each one on a separate row
-                    details = plate_details.split('\n')
-                    for detail in details:
-                        csv_writer.writerow([detail])
-                    log_string += f"{label} OCR saved to {csv_file_path}, "
+                    # Check if the current vehicle is significantly different from previously detected ones across frames
+                    skip = False
+                    for prev_label, prev_details in previous_frames.items():
+                        if distance(plate_details, prev_details) <= 2:
+                            skip = True
+                            break
+                    if not skip:
+                        # Update dictionary with current vehicle details
+                        previous_frames[label] = plate_details
+                        # Split multiline details and write each one on a separate row
+                        details = plate_details.split('\n')
+                        for detail in details:
+                            # Write each detail along with the current date and time as a row in the CSV file
+                            csv_writer.writerow([detail, current_date, current_time])
+                        log_string += f"{label} OCR saved to {csv_file_path}, "
+                    else:
+                        log_string += f"Skipped saving {label} OCR as redundant, "
                 else:
                     log_string += f"No text detected from number plate {label}, "
                 
